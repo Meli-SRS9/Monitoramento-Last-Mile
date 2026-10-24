@@ -206,6 +206,7 @@ details.cfg summary{cursor:pointer;font-family:var(--f-display);font-size:18px;f
     <div id="review" hidden>
       <p class="note" style="margin:0 0 8px">Confira os números lidos antes de salvar. Use GERAL para a visão sem filtro, o nome do ciclo (AM1, PM1, SD) ou da transportadora (MLP, ENVIOS EXTRA). Linhas marcadas com "Revisar" não fecham a soma: corrija o número antes de salvar.</p>
       <div class="tbl-wrap"><table class="review" id="revTable"></table></div>
+      <datalist id="viewNames"><option value="GERAL"><option value="AM1"><option value="PM1"><option value="SD"><option value="MLP"><option value="ENVIOS EXTRA"></datalist>
       <div class="row-actions" style="margin-top:10px">
         <button class="btn small" id="btnAddRow" type="button">Adicionar linha</button>
         <span style="flex:1"></span>
@@ -676,11 +677,18 @@ function handleText(t){
   $("upd").hidden=false;
   if(!r){setStatus("Não encontrei o resumo (Rotas totais, Pacotes…) no texto colado. Na página do Monitoramento, aperte Ctrl+A e depois Ctrl+C antes de colar.",true);return}
   readRows();
-  const row={ciclo:r.view,...r.v};
-  const i=rows.findIndex(x=>x.ciclo===r.view);if(i>=0)rows[i]=row;else rows.push(row);
+  const same=x=>F.every(f=>x[f]===r.v[f]);
+  // mesma colagem de novo: ignora; mesma visão com números diferentes: o filtro não veio no texto, vira linha nova para escolher
+  if(rows.some(same)){setStatus("Esse texto já está na conferência (mesmos números). Aplique outro filtro na página, copie de novo e cole.",true);return}
+  const i=rows.findIndex(x=>x.ciclo===r.view);
+  let msg;
+  if(i>=0){rows.push({ciclo:"",...r.v});msg=`Não consegui identificar o filtro deste texto. Na linha nova (sem nome), escolha a visão: AM1, PM1, SD, MLP ou ENVIOS EXTRA.`;
+    if(window.LM_DEBUG)console.log({ciclo:r.ciclo,transp:r.transp})}
+  else{rows.push({ciclo:r.view,...r.v});msg=`${nameOf(r.view)} adicionada.`}
   rows.sort((a,b)=>ord(a.ciclo||"ZZ")-ord(b.ciclo||"ZZ"));
   showReview();
-  setStatus(`${nameOf(r.view)} adicionada${i>=0?" (substituiu a anterior)":""}. ${rows.length} visão(ões) na conferência. Cole a próxima ou clique em Salvar atualização.${r.warn.length?" Atenção: "+r.warn.join("; ")+".":""}`,!!r.warn.length);
+  setStatus(`${msg} ${rows.length} visão(ões) na conferência. Cole a próxima ou clique em Salvar atualização.${r.warn.length?" Atenção: "+r.warn.join("; ")+".":""}`,i>=0||!!r.warn.length);
+  if(i>=0){const k=rows.findIndex(x=>!x.ciclo);setTimeout(()=>{const el=$("r"+k+"_ciclo");if(el)el.focus()},50)}
   $("review").scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 $("pasteText").addEventListener("input",e=>{const t=e.target.value;if(/rotas totais/i.test(t)&&/bem-sucedidos/i.test(t)){e.target.value="";handleText(t)}});
@@ -939,7 +947,7 @@ function checkRow(r){
 function showReview(){
   $("review").hidden=false;
   $("revTable").innerHTML=`<thead><tr><th>Visão</th>${F.map(f=>`<th>${FLAB[f]}</th>`).join("")}<th>Soma</th><th></th></tr></thead><tbody>${rows.map((r,i)=>`<tr>
-    <td><input class="cyc" id="r${i}_ciclo" value="${esc(r.ciclo)}" aria-label="Visão linha ${i+1}"></td>
+    <td><input class="cyc" list="viewNames" id="r${i}_ciclo" value="${esc(r.ciclo)}" aria-label="Visão linha ${i+1}"></td>
     ${F.map(f=>`<td><input id="r${i}_${f}" type="number" inputmode="numeric" min="0" value="${r[f]}" aria-label="${FLAB[f]} ${esc(r.ciclo)}"></td>`).join("")}
     <td id="chk${i}">${checkRow(r)}</td><td><button type="button" class="btn small" data-rrm="${i}" aria-label="Remover linha">×</button></td></tr>`).join("")}</tbody>`;
 }
@@ -950,6 +958,10 @@ $("revTable").addEventListener("click",e=>{const b=e.target.closest("[data-rrm]"
 let saveArmed=false;
 $("btnSave").onclick=async()=>{
   readRows();const views={};
+  const semNome=rows.filter(r=>!r.ciclo).length;
+  if(semNome){setStatus(`Falta o nome da visão em ${semNome} linha(s). Escolha GERAL, AM1, PM1, SD, MLP ou ENVIOS EXTRA na coluna Visão.`,true);return}
+  const dup=rows.map(r=>r.ciclo).filter((c,i,a)=>a.indexOf(c)!==i);
+  if(dup.length){setStatus(`A visão ${nameOf(dup[0])} aparece em mais de uma linha. Corrija o nome de uma delas.`,true);return}
   const bad=rows.filter(r=>r.ciclo&&rowIssues(r).length);
   if(bad.length&&!saveArmed){saveArmed=true;$("btnSave").textContent="Salvar mesmo assim";
     setStatus(`Confira antes de salvar: ${bad.map(r=>`${nameOf(r.ciclo)} (${rowIssues(r)[0]})`).join("; ")}. Corrija os números ou clique de novo para salvar assim.`,true);return}
