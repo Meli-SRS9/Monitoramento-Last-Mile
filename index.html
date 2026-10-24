@@ -66,6 +66,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px}
 .drop{border:2px dashed var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;background:var(--surface-2)}
 .text-drop{border-style:solid;border-color:var(--accent);background:var(--accent-soft)}
+.steps{list-style:none;margin:6px 0 2px;padding:0;display:flex;flex-direction:column;gap:4px;width:100%;max-width:640px}
+.steps button{display:grid;grid-template-columns:28px 120px 1fr;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:7px 10px;font-size:13px}
+.steps .n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--track);font-family:var(--f-mono);font-size:12px}
+.steps .v{font-weight:600}
+.steps .f{color:var(--muted)}
+.steps button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.steps button.on .n{background:var(--accent);color:var(--accent-ink)}
+.steps button.done .n{background:var(--ok);color:#fff}
+.steps button.done .v::after{content:" · colado";font-weight:400;color:var(--ok)}
+@media (max-width:520px){.steps button{grid-template-columns:28px 1fr}.steps .f{grid-column:2}}
 #pasteText{width:100%;max-width:520px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;resize:vertical}
 .drop.over{border-color:var(--accent);background:var(--accent-soft)}
 .thumbs{display:flex;flex-wrap:wrap;gap:10px}
@@ -186,7 +196,10 @@ details.cfg summary{cursor:pointer;font-family:var(--f-display);font-size:18px;f
     </div>
     <div class="drop text-drop" id="dropText">
       <strong>Recomendado: copie o texto da página</strong>
-      <span class="note">No Monitoramento Last Mile, aperte <b>Ctrl+A</b> e <b>Ctrl+C</b>; aqui, aperte <b>Ctrl+V</b>. Repita para cada visão: geral, cada ciclo e cada transportadora. Os números entram exatos e a visão é identificada pelos filtros da página.</span>
+      <span class="note">Os números entram exatos, iguais aos da página. São 6 colagens por atualização, uma por visão.</span>
+      <div class="note" style="margin-top:6px;color:var(--ink)"><b>Siga a sequência.</b> Em cada passo: ajuste os filtros na página do Monitoramento, aperte <b>Ctrl+A</b> e <b>Ctrl+C</b>, volte aqui e aperte <b>Ctrl+V</b>. A página não copia os filtros, então o painel usa o passo marcado; para colar fora da ordem, clique no passo.</div>
+      <ol class="steps" id="nextView" aria-label="Sequência de colagem"></ol>
+      <div class="note">Antes de começar, confira se <b>Outros filtros</b> está sem filtro aplicado.</div>
       <label class="note" for="pasteText" style="margin-top:4px">No celular, cole o texto neste campo:</label>
       <textarea id="pasteText" rows="2" placeholder="Cole aqui o texto copiado da página"></textarea>
     </div>
@@ -626,7 +639,7 @@ let toastT;function toast(msg,err){const el=$("toast");el.textContent=msg;el.sty
 
 /* ---------- nova atualização ---------- */
 let files=[],rows=[],ctl=null,maxImgs=8,batch=5;
-$("btnNew").onclick=()=>{const u=$("upd");u.hidden=!u.hidden;if(!u.hidden)u.scrollIntoView({behavior:"smooth",block:"start"})};
+$("btnNew").onclick=()=>{nextView=VIEWS.find(v=>!rows.some(r=>r.ciclo===v))||"GERAL";drawNextView();const u=$("upd");u.hidden=!u.hidden;if(!u.hidden)u.scrollIntoView({behavior:"smooth",block:"start"})};
 function addFiles(list){
   for(const f of list){if(!/^image\//.test(f.type))continue;if(files.length>=maxImgs){setStatus(`Limite de ${maxImgs} imagens por atualização.`,true);break}files.push(f)}
   drawThumbs();
@@ -669,26 +682,37 @@ function parsePageText(raw){
   const outros=nz.find(s=>/filtros? aplicados? em Outros filtros/i.test(s));
   if(outros)warn.push(`há ${outros.replace(/ em Outros filtros/i,"")} em "Outros filtros"`);
   if(cic.length&&tra.length)warn.push("o print tem filtro de ciclo e de transportadora ao mesmo tempo");
-  return {view,v,pcts:p,warn,ciclo:cic,transp:tra};
+  const cycles=[...new Set(nz.map(x=>(x.match(/^SRS\d+\s*·\s*([A-Z]{2}\d|SD)$/)||[])[1]).filter(Boolean))];
+  return {view,v,pcts:p,warn,ciclo:cic,transp:tra,cycles};
 }
 
+const VIEWS=["GERAL","AM1","PM1","SD","MLP","ENVIOS EXTRA"];
+const VIEW_FILTERS={GERAL:"Ciclo: vazio · Transportadora: vazio",AM1:"Ciclo: AM1 · Transportadora: vazio",PM1:"Ciclo: PM1 · Transportadora: vazio",SD:"Ciclo: SD · Transportadora: vazio",
+  MLP:"Ciclo: vazio · Transportadora: todas, menos Envios Extra (ex.: ATITUDE +7)","ENVIOS EXTRA":"Ciclo: vazio · Transportadora: só Envios Extra"};
+let nextView="GERAL";
+function drawNextView(){
+  const done=new Set(rows.map(r=>r.ciclo));
+  $("nextView").innerHTML=VIEWS.map((v,i)=>`<li><button type="button" data-nv="${v}" class="${v===nextView?"on":""} ${done.has(v)?"done":""}" aria-current="${v===nextView?"step":"false"}"><span class="n">${done.has(v)?"✓":i+1}</span><span class="v">${esc(nameOf(v))}</span><span class="f">${esc(VIEW_FILTERS[v])}</span></button></li>`).join("");
+}
+$("nextView").addEventListener("click",e=>{const b=e.target.closest("[data-nv]");if(!b)return;nextView=b.dataset.nv;drawNextView()});
 function handleText(t){
   const r=parsePageText(t||"");
   $("upd").hidden=false;
   if(!r){setStatus("Não encontrei o resumo (Rotas totais, Pacotes…) no texto colado. Na página do Monitoramento, aperte Ctrl+A e depois Ctrl+C antes de colar.",true);return}
   readRows();
-  const same=x=>F.every(f=>x[f]===r.v[f]);
-  // mesma colagem de novo: ignora; mesma visão com números diferentes: o filtro não veio no texto, vira linha nova para escolher
-  if(rows.some(same)){setStatus("Esse texto já está na conferência (mesmos números). Aplique outro filtro na página, copie de novo e cole.",true);return}
-  const i=rows.findIndex(x=>x.ciclo===r.view);
-  let msg;
-  if(i>=0){rows.push({ciclo:"",...r.v});msg=`Não consegui identificar o filtro deste texto. Na linha nova (sem nome), escolha a visão: AM1, PM1, SD, MLP ou ENVIOS EXTRA.`;
-    if(window.LM_DEBUG)console.log({ciclo:r.ciclo,transp:r.transp})}
-  else{rows.push({ciclo:r.view,...r.v});msg=`${nameOf(r.view)} adicionada.`}
+  // a página não copia os chips dos filtros: vale a visão escolhida nos botões (ou a detectada, se um dia vier no texto)
+  const view=r.view!=="GERAL"?r.view:nextView;
+  const warn=[...r.warn];
+  if(["AM1","PM1","SD"].includes(view)&&r.cycles.length&&!r.cycles.includes(view))warn.push(`as rotas listadas no texto são do ciclo ${r.cycles.join(", ")}, não ${view}`);
+  const prevSame=rows.find(x=>x.ciclo===view);
+  if(prevSame&&F.every(f=>prevSame[f]===r.v[f])){setStatus(`Esse texto já está na conferência como ${nameOf(view)}. Aplique o próximo filtro na página, copie de novo e cole.`,true);return}
+  const i=rows.findIndex(x=>x.ciclo===view);
+  if(i>=0)rows[i]={ciclo:view,...r.v};else rows.push({ciclo:view,...r.v});
   rows.sort((a,b)=>ord(a.ciclo||"ZZ")-ord(b.ciclo||"ZZ"));
-  showReview();
-  setStatus(`${msg} ${rows.length} visão(ões) na conferência. Cole a próxima ou clique em Salvar atualização.${r.warn.length?" Atenção: "+r.warn.join("; ")+".":""}`,i>=0||!!r.warn.length);
-  if(i>=0){const k=rows.findIndex(x=>!x.ciclo);setTimeout(()=>{const el=$("r"+k+"_ciclo");if(el)el.focus()},50)}
+  const done=new Set(rows.map(x=>x.ciclo));const nx=VIEWS.find(v=>!done.has(v));
+  if(nx)nextView=nx;
+  showReview();drawNextView();
+  setStatus(`${nameOf(view)} ${i>=0?"substituída":"adicionada"}. ${nx?`Agora aplique o filtro ${nameOf(nx)} na página, copie e cole.`:"Todas as visões coladas: clique em Salvar atualização."}${warn.length?" Atenção: "+warn.join("; ")+".":""}`,!!warn.length);
   $("review").scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 $("pasteText").addEventListener("input",e=>{const t=e.target.value;if(/rotas totais/i.test(t)&&/bem-sucedidos/i.test(t)){e.target.value="";handleText(t)}});
@@ -927,7 +951,7 @@ $("btnRead").onclick=async()=>{
 $("btnStop").onclick=()=>{stopRead=true};
 $("btnManual").onclick=()=>{if(!rows.length)rows=["GERAL","AM1","PM1","SD"].map(c=>{const r={ciclo:c};F.forEach(f=>r[f]=0);return r});showReview()};
 $("btnAddRow").onclick=()=>{readRows();const r={ciclo:""};F.forEach(f=>r[f]=0);rows.push(r);showReview()};
-$("btnCancel").onclick=()=>{rows=[];files=[];drawThumbs();$("review").hidden=true;setStatus("");$("upd").hidden=true};
+$("btnCancel").onclick=()=>{nextView="GERAL";rows=[];files=[];drawThumbs();$("review").hidden=true;setStatus("");$("upd").hidden=true};
 
 function rowIssues(r){
   const out=[];
