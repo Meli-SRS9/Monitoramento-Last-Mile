@@ -67,15 +67,21 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .drop{border:2px dashed var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;background:var(--surface-2)}
 .text-drop{border-style:solid;border-color:var(--accent);background:var(--accent-soft)}
 .steps{list-style:none;margin:6px 0 2px;padding:0;display:flex;flex-direction:column;gap:4px;width:100%;max-width:640px}
-.steps button{display:grid;grid-template-columns:28px 120px 1fr;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:7px 10px;font-size:13px}
+.steps li{display:flex;gap:6px;align-items:stretch}
+.steps li>button.step{flex:1;min-width:0}
+.steps button.skip{flex:none;border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:6px;padding:4px 10px;font-size:12px}
+.steps button.skip.on{border-style:solid;border-color:var(--muted);color:var(--ink);background:var(--track)}
+.steps button.skipped{opacity:.6}
+.steps button.skipped .v::after{content:" · não iniciado";font-weight:400;color:var(--muted)}
+.steps button.step{display:grid;grid-template-columns:28px 120px 1fr;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:7px 10px;font-size:13px}
 .steps .n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--track);font-family:var(--f-mono);font-size:12px}
 .steps .v{font-weight:600}
 .steps .f{color:var(--muted)}
-.steps button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
-.steps button.on .n{background:var(--accent);color:var(--accent-ink)}
-.steps button.done .n{background:var(--ok);color:#fff}
-.steps button.done .v::after{content:" · colado";font-weight:400;color:var(--ok)}
-@media (max-width:520px){.steps button{grid-template-columns:28px 1fr}.steps .f{grid-column:2}}
+.steps button.step.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.steps button.step.on .n{background:var(--accent);color:var(--accent-ink)}
+.steps button.step.done .n{background:var(--ok);color:#fff}
+.steps button.step.done .v::after{content:" · colado";font-weight:400;color:var(--ok)}
+@media (max-width:520px){.steps button.step{grid-template-columns:28px 1fr}.steps .f{grid-column:2}}
 #pasteText{width:100%;max-width:520px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;resize:vertical}
 .drop.over{border-color:var(--accent);background:var(--accent-soft)}
 .thumbs{display:flex;flex-wrap:wrap;gap:10px}
@@ -424,6 +430,7 @@ function render(){
         ${pr?projBar(pr,myLo,meta):""}
       </article>`}).join("");
   if(cyc.length)h+=`<section aria-label="Ciclos"><h2 style="margin-bottom:8px">Por ciclo</h2><div class="cycles">${cardsHtml(cyc)}</div></section>`;
+  {const ni=(cur.naoIniciado||[]).filter(k=>!V[k]);if(ni.length)h+=`<p class="note" style="margin:0">Ainda não iniciados nesta atualização: ${ni.map(k=>esc(nameOf(k))).join(", ")}.</p>`;}
   if(car.length)h+=`<section aria-label="Transportadoras"><h2 style="margin-bottom:8px">Por transportadora</h2><div class="cycles">${cardsHtml(car)}</div></section>`;
 
   h+=renderChart(list,cur);
@@ -448,7 +455,8 @@ async function buildCard(){
   const shown=al.slice(0,5).map(a=>({a,lines:wrapLines(mctx,a.t,W-pad*2-170)}));
   const alH=0;
   const rows=[...cyc,...(V.GERAL?["GERAL"]:[])],rowH=78,secH=76,cmpH=118,tableH=70+rows.length*rowH+(car.length?secH+car.length*cmpH:0);
-  const H=190+450+tableH+alH+100;
+  const ni=(cur.naoIniciado||[]).filter(k=>!V[k]);
+  const H=190+450+tableH+alH+100+(ni.length?48:0);
   const c=document.createElement("canvas");c.width=W;c.height=H;const x=c.getContext("2d");
   x.fillStyle=CARD.bg;x.fillRect(0,0,W,H);
   // faixa de título
@@ -540,6 +548,7 @@ async function buildCard(){
     y+=car.length*cmpH;
   }
   y+=30;
+  if(ni.length){x.fillStyle=CARD.muted;x.font=`400 22px ${FB}`;x.fillText(`Ainda não iniciados: ${ni.map(nameOf).join(", ")}`,pad,H-100)}
   // rodapé
   x.fillStyle=CARD.line;x.fillRect(pad,H-80,W-pad*2,2);
   x.fillStyle=CARD.muted;x.font=`400 21px ${FB}`;
@@ -639,7 +648,7 @@ let toastT;function toast(msg,err){const el=$("toast");el.textContent=msg;el.sty
 
 /* ---------- nova atualização ---------- */
 let files=[],rows=[],ctl=null,maxImgs=8,batch=5;
-$("btnNew").onclick=()=>{nextView=VIEWS.find(v=>!rows.some(r=>r.ciclo===v))||"GERAL";drawNextView();const u=$("upd");u.hidden=!u.hidden;if(!u.hidden)u.scrollIntoView({behavior:"smooth",block:"start"})};
+$("btnNew").onclick=()=>{nextView=pendingViews()[0]||"GERAL";drawNextView();const u=$("upd");u.hidden=!u.hidden;if(!u.hidden)u.scrollIntoView({behavior:"smooth",block:"start"})};
 function addFiles(list){
   for(const f of list){if(!/^image\//.test(f.type))continue;if(files.length>=maxImgs){setStatus(`Limite de ${maxImgs} imagens por atualização.`,true);break}files.push(f)}
   drawThumbs();
@@ -689,12 +698,24 @@ function parsePageText(raw){
 const VIEWS=["GERAL","AM1","PM1","SD","MLP","ENVIOS EXTRA"];
 const VIEW_FILTERS={GERAL:"Ciclo: vazio · Transportadora: vazio",AM1:"Ciclo: AM1 · Transportadora: vazio",PM1:"Ciclo: PM1 · Transportadora: vazio",SD:"Ciclo: SD · Transportadora: vazio",
   MLP:"Ciclo: vazio · Transportadora: todas, menos Envios Extra (ex.: ATITUDE +7)","ENVIOS EXTRA":"Ciclo: vazio · Transportadora: só Envios Extra"};
-let nextView="GERAL";
+let nextView="GERAL";const skipped=new Set();
+const pendingViews=()=>VIEWS.filter(v=>!rows.some(r=>r.ciclo===v)&&!skipped.has(v));
 function drawNextView(){
   const done=new Set(rows.map(r=>r.ciclo));
-  $("nextView").innerHTML=VIEWS.map((v,i)=>`<li><button type="button" data-nv="${v}" class="${v===nextView?"on":""} ${done.has(v)?"done":""}" aria-current="${v===nextView?"step":"false"}"><span class="n">${done.has(v)?"✓":i+1}</span><span class="v">${esc(nameOf(v))}</span><span class="f">${esc(VIEW_FILTERS[v])}</span></button></li>`).join("");
+  $("nextView").innerHTML=VIEWS.map((v,i)=>{const sk=skipped.has(v)&&!done.has(v);
+    return `<li><button type="button" data-nv="${v}" class="step ${v===nextView&&!sk?"on":""} ${done.has(v)?"done":""} ${sk?"skipped":""}" aria-current="${v===nextView?"step":"false"}"><span class="n">${done.has(v)?"✓":sk?"–":i+1}</span><span class="v">${esc(nameOf(v))}</span><span class="f">${esc(VIEW_FILTERS[v])}</span></button>`+
+    (v==="GERAL"?"":`<button type="button" class="skip ${sk?"on":""}" data-skip="${v}" title="Marque quando essa visão ainda não começou">${sk?"Desfazer":"Não iniciou"}</button>`)+`</li>`}).join("");
 }
-$("nextView").addEventListener("click",e=>{const b=e.target.closest("[data-nv]");if(!b)return;nextView=b.dataset.nv;drawNextView()});
+$("nextView").addEventListener("click",e=>{
+  const k=e.target.closest("[data-skip]");
+  if(k){const v=k.dataset.skip;
+    if(skipped.has(v))skipped.delete(v);
+    else{skipped.add(v);const i=rows.findIndex(r=>r.ciclo===v);if(i>=0){rows.splice(i,1);showReview()}}
+    const nx=pendingViews()[0];if(nx)nextView=nx;drawNextView();
+    setStatus(nx?`${nameOf(v)} ${skipped.has(v)?"marcada como não iniciada":"voltou para a sequência"}. Próximo passo: ${nameOf(nx)}.`:"Sequência completa: clique em Salvar atualização.");
+    if(!rows.length&&!nx)$("review").hidden=false;
+    return}
+  const b=e.target.closest("[data-nv]");if(!b)return;nextView=b.dataset.nv;skipped.delete(nextView);drawNextView()});
 function handleText(t){
   const r=parsePageText(t||"");
   $("upd").hidden=false;
@@ -709,7 +730,7 @@ function handleText(t){
   const i=rows.findIndex(x=>x.ciclo===view);
   if(i>=0)rows[i]={ciclo:view,...r.v};else rows.push({ciclo:view,...r.v});
   rows.sort((a,b)=>ord(a.ciclo||"ZZ")-ord(b.ciclo||"ZZ"));
-  const done=new Set(rows.map(x=>x.ciclo));const nx=VIEWS.find(v=>!done.has(v));
+  skipped.delete(view);const nx=pendingViews()[0];
   if(nx)nextView=nx;
   showReview();drawNextView();
   setStatus(`${nameOf(view)} ${i>=0?"substituída":"adicionada"}. ${nx?`Agora aplique o filtro ${nameOf(nx)} na página, copie e cole.`:"Todas as visões coladas: clique em Salvar atualização."}${warn.length?" Atenção: "+warn.join("; ")+".":""}`,!!warn.length);
@@ -951,7 +972,7 @@ $("btnRead").onclick=async()=>{
 $("btnStop").onclick=()=>{stopRead=true};
 $("btnManual").onclick=()=>{if(!rows.length)rows=["GERAL","AM1","PM1","SD"].map(c=>{const r={ciclo:c};F.forEach(f=>r[f]=0);return r});showReview()};
 $("btnAddRow").onclick=()=>{readRows();const r={ciclo:""};F.forEach(f=>r[f]=0);rows.push(r);showReview()};
-$("btnCancel").onclick=()=>{nextView="GERAL";rows=[];files=[];drawThumbs();$("review").hidden=true;setStatus("");$("upd").hidden=true};
+$("btnCancel").onclick=()=>{nextView="GERAL";skipped.clear();rows=[];files=[];drawThumbs();$("review").hidden=true;setStatus("");$("upd").hidden=true};
 
 function rowIssues(r){
   const out=[];
@@ -992,11 +1013,11 @@ $("btnSave").onclick=async()=>{
   saveArmed=false;$("btnSave").textContent="Salvar atualização";
   for(const r of rows){if(!r.ciclo||r.ciclo==="FORA")continue;const v={};F.forEach(f=>v[f]=r[f]);views[r.ciclo]=v}
   if(!Object.keys(views).length){setStatus("Nada para salvar: preencha ao menos uma linha com o nome da visão.",true);return}
-  const ts=Date.now(),id="s"+ts,doc={ts,day:dayKey(ts),views,origem:files.length?"prints":"manual"};
+  const ts=Date.now(),id="s"+ts,doc={ts,day:dayKey(ts),views,origem:files.length?"prints":"manual",naoIniciado:[...skipped].filter(v=>!views[v])};
   $("btnSave").disabled=true;
   try{
     state.snaps.push({id,...doc});if(!persist()){state.snaps.pop();throw {code:"storage"}}
-    state.day=doc.day;state.sel=id;rows=[];files=[];drawThumbs();$("review").hidden=true;$("upd").hidden=true;setStatus("");
+    state.day=doc.day;state.sel=id;skipped.clear();nextView="GERAL";rows=[];files=[];drawThumbs();$("review").hidden=true;$("upd").hidden=true;setStatus("");
     toast(`Atualização das ${hm(ts)} salva`);render();
   }catch(err){setStatus("Não foi possível salvar neste navegador. Salve um backup e exclua registros antigos.",true)}
   finally{$("btnSave").disabled=false}
