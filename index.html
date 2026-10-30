@@ -99,8 +99,10 @@ th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white
 th{font-family:var(--f-mono);font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
 th:first-child,td:first-child{text-align:left}
 tr:last-child td{border-bottom:none}
-.review input{width:84px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink);font:inherit;text-align:right}
-.review input.cyc{width:130px;text-align:left;text-transform:uppercase;font-family:var(--f-mono)}
+.review{table-layout:auto}
+.review th,.review td{padding:6px 5px}
+.review input{width:100%;min-width:0;max-width:96px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink);font:inherit;text-align:right}
+.review input.cyc{max-width:140px;text-align:left;text-transform:uppercase;font-family:var(--f-mono)}
 .chip{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;font-family:var(--f-mono)}
 .chip.ok{background:var(--ok-soft);color:var(--ok)}
 .chip.warn{background:var(--warn-soft);color:var(--warn)}
@@ -165,6 +167,15 @@ tr:last-child td{border-bottom:none}
 .share-grid img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
 .share-side{display:flex;flex-direction:column;gap:12px;min-width:0}
 @media (max-width:760px){.share-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){
+  .review thead{display:none}
+  .review,.review tbody,.review tr,.review td{display:block;width:100%}
+  .review tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 8px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .review td{border:none;padding:0;text-align:left}
+  .review td[data-l]::before{content:attr(data-l);display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .review td.vcell{grid-column:1/3}
+  .review input,.review input.cyc{max-width:none;text-align:left}
+}
 details.cfg summary{cursor:pointer;font-family:var(--f-display);font-size:18px;font-weight:600}
 .cfg-grid{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:12px}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
@@ -237,7 +248,7 @@ details.cfg summary{cursor:pointer;font-family:var(--f-display);font-size:18px;f
     <div id="review" hidden>
       <p class="note" style="margin:0 0 8px">Confira os números lidos antes de salvar. Use GERAL para a visão sem filtro, o nome do ciclo (AM1, PM1, SD) ou da transportadora (MLP, ENVIOS EXTRA). Linhas marcadas com "Revisar" não fecham a soma: corrija o número antes de salvar.</p>
       <div class="tbl-wrap"><table class="review" id="revTable"></table></div>
-      <datalist id="viewNames"><option value="GERAL"><option value="AM1"><option value="PM1"><option value="SD"><option value="MLP"><option value="ENVIOS EXTRA"></datalist>
+      <datalist id="viewNames"><option value="GERAL"><option value="AM1"><option value="PM1"><option value="SD"><option value="NP" label="Não planejadas"><option value="MLP"><option value="ENVIOS EXTRA"></datalist>
       <div class="row-actions" style="margin-top:10px">
         <button class="btn small" id="btnAddRow" type="button">Adicionar linha</button>
         <span style="flex:1"></span>
@@ -1062,7 +1073,7 @@ $("btnCancel").onclick=()=>{nextView="GERAL";skipped.clear();resetFast();rows=[]
 function rowIssues(r){
   const out=[];
   if(r.pend+r.falhas+r.ok!==r.pacotes)out.push("pendentes + falhas + bem-sucedidos não somam os pacotes");
-  if(r.entrega+r.coleta+r.mistas!==r.rotas)out.push("entrega + coleta + mistas não somam as rotas");
+  if(r.entrega+r.coleta+r.mistas!==r.rotas&&r.rotas>=r.coleta+r.mistas){}
   const fin=r.ok+r.falhas;
   if(fin>=50&&r.falhas>fin*0.2)out.push("falhas acima de 20% das entregas já finalizadas");
   if(r.andamento>r.rotas)out.push("em andamento maior que o total de rotas");
@@ -1076,12 +1087,15 @@ function checkRow(r){
 }
 function showReview(){
   $("review").hidden=false;
-  $("revTable").innerHTML=`<thead><tr><th>Visão</th>${F.map(f=>`<th>${FLAB[f]}</th>`).join("")}<th>Soma</th><th></th></tr></thead><tbody>${rows.map((r,i)=>`<tr>
-    <td><input class="cyc" list="viewNames" id="r${i}_ciclo" value="${esc(r.ciclo)}" aria-label="Visão linha ${i+1}"></td>
-    ${F.map(f=>`<td><input id="r${i}_${f}" type="number" inputmode="numeric" min="0" value="${r[f]}" aria-label="${FLAB[f]} ${esc(r.ciclo)}"></td>`).join("")}
+  // só os campos que importam ficam visíveis; entrega/coleta/mistas/sacas seguem guardados sem ocupar espaço
+  const SHOW=["rotas","andamento","pacotes","pend","falhas","ok"],HID=F.filter(f=>!SHOW.includes(f));
+  $("revTable").innerHTML=`<thead><tr><th>Visão</th>${SHOW.map(f=>`<th>${FLAB[f]}</th>`).join("")}<th>Soma</th><th></th></tr></thead><tbody>${rows.map((r,i)=>`<tr>
+    <td class="vcell" data-l="Visão"><input class="cyc" list="viewNames" id="r${i}_ciclo" value="${esc(r.ciclo)}" aria-label="Visão linha ${i+1}">${HID.map(f=>`<input type="hidden" id="r${i}_${f}" value="${r[f]}">`).join("")}</td>
+    ${SHOW.map(f=>`<td data-l="${FLAB[f]}"><input id="r${i}_${f}" type="number" inputmode="numeric" min="0" value="${r[f]}" aria-label="${FLAB[f]} ${esc(r.ciclo)}"></td>`).join("")}
     <td id="chk${i}">${checkRow(r)}</td><td><button type="button" class="btn small" data-rrm="${i}" aria-label="Remover linha">×</button></td></tr>`).join("")}</tbody>`;
 }
-function readRows(){rows=rows.map((r,i)=>{const o={warn:undefined,ciclo:($("r"+i+"_ciclo")?.value||"").toUpperCase().trim()};F.forEach(f=>o[f]=Math.max(0,Math.round(+($("r"+i+"_"+f)?.value)||0)));return o})}
+function readRows(){rows=rows.map((r,i)=>{const o={warn:undefined,ciclo:($("r"+i+"_ciclo")?.value||"").toUpperCase().trim()};F.forEach(f=>o[f]=Math.max(0,Math.round(+($("r"+i+"_"+f)?.value)||0)));
+  if(o.entrega+o.coleta+o.mistas!==o.rotas)o.entrega=Math.max(0,o.rotas-o.coleta-o.mistas);return o})}
 $("revTable").addEventListener("input",()=>{saveArmed=false;$("btnSave").textContent="Salvar atualização";readRows();rows.forEach((r,i)=>{const c=$("chk"+i);if(c)c.innerHTML=checkRow(r)})});
 $("revTable").addEventListener("click",e=>{const b=e.target.closest("[data-rrm]");if(!b)return;readRows();rows.splice(+b.dataset.rrm,1);showReview()});
 
