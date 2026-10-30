@@ -66,6 +66,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px}
 .drop{border:2px dashed var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;background:var(--surface-2)}
 .text-drop{border-style:solid;border-color:var(--accent);background:var(--accent-soft)}
+.fastbar{margin-top:8px;padding:8px 10px;border-radius:6px;background:var(--surface);border:1px solid var(--line);font-size:13px;max-width:640px}
+.fastbar b{font-variant-numeric:tabular-nums}
 .steps{list-style:none;margin:6px 0 2px;padding:0;display:flex;flex-direction:column;gap:4px;width:100%;max-width:640px}
 .steps li{display:flex;gap:6px;align-items:stretch}
 .steps li>button.step{flex:1;min-width:0}
@@ -202,9 +204,19 @@ details.cfg summary{cursor:pointer;font-family:var(--f-display);font-size:18px;f
     </div>
     <div class="drop text-drop" id="dropText">
       <strong>Recomendado: copie o texto da página</strong>
-      <span class="note">Os números entram exatos, iguais aos da página. São 6 colagens por atualização, uma por visão.</span>
-      <div class="note" style="margin-top:6px;color:var(--ink)"><b>Siga a sequência.</b> Em cada passo: ajuste os filtros na página do Monitoramento, aperte <b>Ctrl+A</b> e <b>Ctrl+C</b>, volte aqui e aperte <b>Ctrl+V</b>. A página não copia os filtros, então o painel usa o passo marcado; para colar fora da ordem, clique no passo.</div>
-      <ol class="steps" id="nextView" aria-label="Sequência de colagem"></ol>
+      <div class="seg" id="modeSeg" role="group" aria-label="Forma de colar">
+        <button type="button" data-mode="rapido" class="on">Rápido: lista de rotas</button>
+        <button type="button" data-mode="filtro">Por filtro: 6 colagens</button>
+      </div>
+      <div id="modeRapido">
+        <div class="note" style="color:var(--ink)"><b>Sem nenhum filtro</b> (Ciclo e Transportadora vazios), aperte <b>Ctrl+A</b> e <b>Ctrl+C</b> na página do Monitoramento e cole aqui com <b>Ctrl+V</b>. Depois vá para a <b>página 2</b> da lista de rotas (e 3, se houver) e repita. O painel soma as páginas e monta Geral, ciclos e transportadoras sozinho.</div>
+        <div class="fastbar" id="fastBar">Nenhuma página colada ainda.</div>
+      </div>
+      <div id="modeFiltro" hidden>
+        <span class="note">Os números entram exatos, iguais aos da página. São 6 colagens por atualização, uma por visão.</span>
+        <div class="note" style="margin-top:6px;color:var(--ink)"><b>Siga a sequência.</b> Em cada passo: ajuste os filtros na página do Monitoramento, aperte <b>Ctrl+A</b> e <b>Ctrl+C</b>, volte aqui e aperte <b>Ctrl+V</b>. A página não copia os filtros, então o painel usa o passo marcado; para colar fora da ordem, clique no passo.</div>
+        <ol class="steps" id="nextView" aria-label="Sequência de colagem"></ol>
+      </div>
       <div class="note">Antes de começar, confira se <b>Outros filtros</b> está sem filtro aplicado.</div>
       <label class="note" for="pasteText" style="margin-top:4px">No celular, cole o texto neste campo:</label>
       <textarea id="pasteText" rows="2" placeholder="Cole aqui o texto copiado da página"></textarea>
@@ -283,12 +295,12 @@ const r1=x=>Math.round(x*1000)/10;
 const fmtN=v=>String(v).replace(".",",");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const $=id=>document.getElementById(id);
-const ORDER=["GERAL","AM1","AM2","PM1","PM2","SD","AMBULANCIA","FORA","MLP","ENVIOS EXTRA","KANGU"];
+const ORDER=["GERAL","AM1","AM2","PM1","PM2","SD","AMBULANCIA","NP","FORA","MLP","ENVIOS EXTRA","KANGU"];
 const CARRIERS=["MLP","ENVIOS EXTRA","KANGU"];
 const isCarrier=k=>CARRIERS.includes(k);
 const ord=k=>{const i=ORDER.indexOf(k);return i<0?40:i};
 const sortKeys=ks=>ks.slice().sort((a,b)=>ord(a)-ord(b)||a.localeCompare(b));
-const NAMES={GERAL:"Geral",FORA:"Fora de ciclo",AMBULANCIA:"Ambulância","ENVIOS EXTRA":"Envios Extra",KANGU:"Kangu"};
+const NAMES={NP:"Não planejadas",GERAL:"Geral",FORA:"Fora de ciclo",AMBULANCIA:"Ambulância","ENVIOS EXTRA":"Envios Extra",KANGU:"Kangu"};
 const nameOf=k=>NAMES[k]||k;
 const COLORS={GERAL:"var(--ink)",AM1:"var(--s1)",PM1:"var(--s2)",SD:"var(--s3)",FORA:"var(--s4)",MLP:"var(--s5)","ENVIOS EXTRA":"var(--s4)",KANGU:"var(--muted)"};
 const extra=["var(--s5)","var(--muted)"];
@@ -648,7 +660,7 @@ let toastT;function toast(msg,err){const el=$("toast");el.textContent=msg;el.sty
 
 /* ---------- nova atualização ---------- */
 let files=[],rows=[],ctl=null,maxImgs=8,batch=5;
-$("btnNew").onclick=()=>{nextView=pendingViews()[0]||"GERAL";drawNextView();const u=$("upd");u.hidden=!u.hidden;if(!u.hidden)u.scrollIntoView({behavior:"smooth",block:"start"})};
+$("btnNew").onclick=()=>{setMode(mode);nextView=pendingViews()[0]||"GERAL";drawNextView();const u=$("upd");u.hidden=!u.hidden;if(!u.hidden)u.scrollIntoView({behavior:"smooth",block:"start"})};
 function addFiles(list){
   for(const f of list){if(!/^image\//.test(f.type))continue;if(files.length>=maxImgs){setStatus(`Limite de ${maxImgs} imagens por atualização.`,true);break}files.push(f)}
   drawThumbs();
@@ -716,7 +728,79 @@ $("nextView").addEventListener("click",e=>{
     if(!rows.length&&!nx)$("review").hidden=false;
     return}
   const b=e.target.closest("[data-nv]");if(!b)return;nextView=b.dataset.nv;skipped.delete(nextView);drawNextView()});
+// Lista de rotas do texto copiado: cada bloco começa em "XX_CICLO · #id" ou em "Rota não planejada"
+function parseRoutes(raw){
+  const L=raw.replace(/\r/g,"").split("\n").map(s=>s.trim());
+  const out=[];let cur=null;
+  const head=/^([A-Z0-9]+_[A-Z0-9]+)\s*·\s*#(\d+)$/;
+  for(let i=0;i<L.length;i++){
+    const s=L[i];const m=s.match(head),np=/^rota não planejada$/i.test(s);
+    if(m||np){
+      cur={nome:m?m[1]:"Não planejada",id:m?m[2]:null,np,transp:"",placa:"",motorista:"",ciclo:"",pend:null,falhas:null,ok:null,pacotes:null,andamento:false};out.push(cur);
+      const nx=[];for(let j=i+1;j<L.length&&nx.length<3;j++)if(L[j])nx.push(L[j]);
+      cur.transp=(nx[0]||"").toLowerCase();cur.placa=nx[1]==="·"?(nx[2]||""):"";
+      continue}
+    if(!cur)continue;
+    let c=s.match(/^SRS\d+(?:\s*·\s*([A-Z0-9]+))?$/);
+    if(c&&!cur.ciclo&&!cur.motorista){cur.ciclo=c[1]||"";for(let j=i+1;j<L.length&&j<i+4;j++)if(L[j]){cur.motorista=L[j];break}}
+    c=s.match(/^(\d+) pendentes?, (\d+) com falhas?, (\d+) bem-sucedidos?$/);if(c&&cur.pend==null){cur.pend=+c[1];cur.falhas=+c[2];cur.ok=+c[3]}
+    if(s==="SPR"&&cur.pacotes==null){const u=(L[i+1]||"").match(/^([\d.]+) unidades$/);if(u)cur.pacotes=+u[1].replace(/\./g,"")}
+    if(s==="Em andamento")cur.andamento=true;
+  }
+  return out.filter(r=>r.pend!=null).map(r=>{
+    if(r.np)r.ciclo="NP";else if(!r.ciclo)r.ciclo=(r.nome.split("_")[1]||"").toUpperCase();
+    if(r.pacotes==null)r.pacotes=r.pend+r.falhas+r.ok;
+    r.key=r.id||`NP|${r.placa}|${r.motorista}`;
+    return r});
+}
+const carrierView=t=>/envios?\s*extra/i.test(t)?"ENVIOS EXTRA":"MLP";
+function viewsFromRoutes(routes){
+  const v={};
+  const add=(k,r)=>{const x=v[k]||(v[k]={rotas:0,entrega:0,coleta:0,mistas:0,andamento:0,pacotes:0,sacas:0,pend:0,falhas:0,ok:0});
+    x.rotas++;x.entrega++;if(r.andamento)x.andamento++;x.pacotes+=r.pacotes;x.pend+=r.pend;x.falhas+=r.falhas;x.ok+=r.ok};
+  for(const r of routes){add(r.ciclo,r);add(carrierView(r.transp),r)}
+  return v;
+}
+
+let mode="rapido";try{if(localStorage.getItem("lm_mode")==="filtro")mode="filtro"}catch(_){ }
+let fast={routes:new Map(),head:null,pages:0,warn:[]};
+function setMode(m){mode=m;try{localStorage.setItem("lm_mode",m)}catch(_){ }
+  $("modeRapido").hidden=m!=="rapido";$("modeFiltro").hidden=m!=="filtro";
+  [...$("modeSeg").children].forEach(b=>b.classList.toggle("on",b.dataset.mode===m))}
+$("modeSeg").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(b)setMode(b.dataset.mode)});
+function resetFast(){fast={routes:new Map(),head:null,pages:0,warn:[]};drawFast()}
+function drawFast(){
+  const tot=fast.head?fast.head.v.rotas:null,n=fast.routes.size;
+  $("fastBar").innerHTML=!fast.pages?"Nenhuma página colada ainda.":
+    `Páginas coladas: <b>${fast.pages}</b> · Rotas lidas: <b>${n}</b>${tot!=null?` de <b>${tot}</b>`:""} ${tot!=null&&n>=tot?'<span class="chip ok">Lista completa</span>':'<span class="chip warn">Falta página</span>'}`;
+}
+function handleFast(t){
+  const h=parsePageText(t||""),rs=parseRoutes(t||"");
+  $("upd").hidden=false;
+  if(!h&&!rs.length){setStatus("Não encontrei o resumo nem a lista de rotas no texto. Na página do Monitoramento, aperte Ctrl+A e Ctrl+C antes de colar.",true);return}
+  if(h){if(fast.head&&F.some(f=>fast.head.v[f]!==h.v[f])&&fast.routes.size){ // números do topo mudaram: é outra atualização ou outro filtro
+      fast.routes.clear();fast.pages=0}
+    fast.head=h}
+  let novas=0;for(const r of rs){if(!fast.routes.has(r.key))novas++;fast.routes.set(r.key,r)}
+  if(novas||!rs.length)fast.pages++;
+  const all=[...fast.routes.values()],tot=fast.head?fast.head.v.rotas:all.length,completa=all.length>=tot;
+  const V=viewsFromRoutes(all);
+  rows=[];
+  if(fast.head)rows.push({ciclo:"GERAL",...fast.head.v});
+  for(const k of Object.keys(V))rows.push({ciclo:k,...V[k]});
+  rows.sort((a,b)=>ord(a.ciclo||"ZZ")-ord(b.ciclo||"ZZ"));
+  skipped.clear();
+  if(completa)["AM1","PM1","SD","ENVIOS EXTRA"].forEach(v=>{if(!V[v])skipped.add(v)});
+  const warn=[...(fast.head?fast.head.warn:[])];
+  if(completa&&fast.head){const sp=all.reduce((a,r)=>a+r.pacotes,0);if(sp!==fast.head.v.pacotes)warn.push(`a soma dos pacotes das rotas (${n(sp)}) difere do total do topo (${n(fast.head.v.pacotes)})`)}
+  if(!novas&&rs.length)warn.push("essa página já tinha sido colada");
+  showReview();drawFast();
+  setStatus(completa?`Lista completa: ${all.length} rotas. Visões montadas: ${rows.map(r=>nameOf(r.ciclo)).join(", ")}${skipped.size?`. Não iniciados: ${[...skipped].map(nameOf).join(", ")}`:""}. Confira e clique em Salvar atualização.${warn.length?" Atenção: "+warn.join("; ")+".":""}`
+    :`Página colada: ${all.length} de ${tot} rotas. Vá para a próxima página da lista de rotas, aperte Ctrl+A e Ctrl+C e cole aqui.${warn.length?" Atenção: "+warn.join("; ")+".":""}`,!completa||!!warn.length);
+  $("review").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
 function handleText(t){
+  if(mode==="rapido")return handleFast(t);
   const r=parsePageText(t||"");
   $("upd").hidden=false;
   if(!r){setStatus("Não encontrei o resumo (Rotas totais, Pacotes…) no texto colado. Na página do Monitoramento, aperte Ctrl+A e depois Ctrl+C antes de colar.",true);return}
@@ -736,10 +820,11 @@ function handleText(t){
   setStatus(`${nameOf(view)} ${i>=0?"substituída":"adicionada"}. ${nx?`Agora aplique o filtro ${nameOf(nx)} na página, copie e cole.`:"Todas as visões coladas: clique em Salvar atualização."}${warn.length?" Atenção: "+warn.join("; ")+".":""}`,!!warn.length);
   $("review").scrollIntoView({behavior:"smooth",block:"nearest"});
 }
-$("pasteText").addEventListener("input",e=>{const t=e.target.value;if(/rotas totais/i.test(t)&&/bem-sucedidos/i.test(t)){e.target.value="";handleText(t)}});
+const isPageText=t=>(/rotas totais/i.test(t)&&/bem-sucedidos/i.test(t))||/[A-Z0-9]+_[A-Z0-9]+\s*·\s*#\d+/.test(t);
+$("pasteText").addEventListener("input",e=>{const t=e.target.value;if(isPageText(t)){e.target.value="";handleText(t)}});
 document.addEventListener("paste",e=>{
   const txt=e.clipboardData?.getData("text/plain")||"";
-  if(/rotas totais/i.test(txt)&&/bem-sucedidos/i.test(txt)){e.preventDefault();handleText(txt);return}
+  if(isPageText(txt)){e.preventDefault();handleText(txt);return}
   const items=[...(e.clipboardData?.items||[])].filter(i=>i.kind==="file"&&i.type.startsWith("image/"));
   if(!items.length)return;e.preventDefault();$("upd").hidden=false;
   addFiles(items.map((it,i)=>{const f=it.getAsFile();return f&&f.name?f:new File([f],`print-${Date.now()}-${i}.png`,{type:f.type})}));
@@ -972,7 +1057,7 @@ $("btnRead").onclick=async()=>{
 $("btnStop").onclick=()=>{stopRead=true};
 $("btnManual").onclick=()=>{if(!rows.length)rows=["GERAL","AM1","PM1","SD"].map(c=>{const r={ciclo:c};F.forEach(f=>r[f]=0);return r});showReview()};
 $("btnAddRow").onclick=()=>{readRows();const r={ciclo:""};F.forEach(f=>r[f]=0);rows.push(r);showReview()};
-$("btnCancel").onclick=()=>{nextView="GERAL";skipped.clear();rows=[];files=[];drawThumbs();$("review").hidden=true;setStatus("");$("upd").hidden=true};
+$("btnCancel").onclick=()=>{nextView="GERAL";skipped.clear();resetFast();rows=[];files=[];drawThumbs();$("review").hidden=true;setStatus("");$("upd").hidden=true};
 
 function rowIssues(r){
   const out=[];
@@ -1007,6 +1092,9 @@ $("btnSave").onclick=async()=>{
   if(semNome){setStatus(`Falta o nome da visão em ${semNome} linha(s). Escolha GERAL, AM1, PM1, SD, MLP ou ENVIOS EXTRA na coluna Visão.`,true);return}
   const dup=rows.map(r=>r.ciclo).filter((c,i,a)=>a.indexOf(c)!==i);
   if(dup.length){setStatus(`A visão ${nameOf(dup[0])} aparece em mais de uma linha. Corrija o nome de uma delas.`,true);return}
+  const incompleta=mode==="rapido"&&fast.head&&fast.routes.size<fast.head.v.rotas;
+  if(incompleta&&!saveArmed){saveArmed=true;$("btnSave").textContent="Salvar mesmo assim";
+    setStatus(`A lista de rotas está incompleta (${fast.routes.size} de ${fast.head.v.rotas}): ciclos e transportadoras vão sair só com as rotas coladas. Cole as páginas que faltam ou clique de novo para salvar assim.`,true);return}
   const bad=rows.filter(r=>r.ciclo&&rowIssues(r).length);
   if(bad.length&&!saveArmed){saveArmed=true;$("btnSave").textContent="Salvar mesmo assim";
     setStatus(`Confira antes de salvar: ${bad.map(r=>`${nameOf(r.ciclo)} (${rowIssues(r)[0]})`).join("; ")}. Corrija os números ou clique de novo para salvar assim.`,true);return}
@@ -1017,7 +1105,7 @@ $("btnSave").onclick=async()=>{
   $("btnSave").disabled=true;
   try{
     state.snaps.push({id,...doc});if(!persist()){state.snaps.pop();throw {code:"storage"}}
-    state.day=doc.day;state.sel=id;skipped.clear();nextView="GERAL";rows=[];files=[];drawThumbs();$("review").hidden=true;$("upd").hidden=true;setStatus("");
+    state.day=doc.day;state.sel=id;skipped.clear();resetFast();nextView="GERAL";rows=[];files=[];drawThumbs();$("review").hidden=true;$("upd").hidden=true;setStatus("");
     toast(`Atualização das ${hm(ts)} salva`);render();
   }catch(err){setStatus("Não foi possível salvar neste navegador. Salve um backup e exclua registros antigos.",true)}
   finally{$("btnSave").disabled=false}
